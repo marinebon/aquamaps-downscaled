@@ -1,0 +1,277 @@
+---
+title: "AquaMaps to GEBCO v01 - blue whale"
+author: "Benjamin D. Best <ben@ecoquants.com>"
+date: now
+date-format: "YYYY-MM-DD HH:mm (z)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-tools: true
+bibliography: "mbon-bio-idx.bib"
+editor_options: 
+  chunk_output_type: console
+---
+
+## Overview
+
+**Goal**: Downscale [AquaMaps.org](https://aquamaps.org) species distributions [@kaschnerAquaMapsPredictedRange2023;@readyPredictingDistributionsMarine2010] from 0.5 decimal degrees to 15 arc seconds (~ 111 km to `r 111 / 60 / (15/60)` km at the equator), using  the R package [`aquamapsdata`](https://raquamaps.github.io/aquamapsdata/index.html) and the the General Bathymetric Chart of the Oceans [GEBCO](https://www.gebco.net/).
+
+We start with the "Blue Whale" ([_Balaenoptera musculus_](https://aquamaps.org/preMap2.php?cache=1&SpecID=ITS-Mam-180528)) and Southern California. 
+
+Later we'll iterate over species and expand to global, which will require large raster handling techniques using Cloud-Optimized GeoTIFFS (COGs; see [cogeo.org](https://www.cogeo.org)).
+
+All code and files (except the large global GEBCO grid) are found in this repository:
+
+- [github.com/marinebon/aquamaps-downscaled](https://github.com/marinebon/aquamaps-downscaled)
+
+
+```{r qmd_setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = T,
+  message = F,
+  warning = F)
+```
+
+```{r}
+#| label: setup
+
+# packages ----
+if (!"librarian" %in% installed.packages())
+  install.packages("librarian")
+if (!"rcrypt" %in% installed.packages())
+  devtools::install_bitbucket("bklamer/rcrypt") # dependency for aquamapsdata
+librarian::shelf(
+ bklamer/rcrypt,
+ raquamaps/aquamapsdata,
+ dplyr, ggplot2, glue, here, leaflet, 
+ # TODO: migrate raster to terra
+ # terra, 
+ raster, rnaturalearth, sf, stringr, tidyr,
+ quiet = T)
+select = dplyr::select
+
+# initial run-once step required to install remote db locally
+# download_db(force = TRUE)
+
+# aquamaps database ----
+am_db <- default_db("sqlite")
+
+# paths ----
+dir_big         <- "/Users/bbest/big"
+gebco_nc        <- glue("{dir_big}/gebco_2022_sub_ice_topo/GEBCO_2022_sub_ice_topo.nc")
+gebco_socal_tif <- here("data/gebco_socal.tif")
+land_socal_geo  <- here("data/land_socal.geojson")
+
+# custom functions ----
+add_ocean_basemap <- function(m){
+  # m: leaflet() map
+  
+  m |>
+    # add base: blue bathymetry and light brown/green topography
+    addProviderTiles(
+      "Esri.OceanBasemap",
+      options = providerTileOptions(
+        variant = "Ocean/World_Ocean_Base")) |>
+    # add reference: placename labels and borders
+    addProviderTiles(
+      "Esri.OceanBasemap",
+      options = providerTileOptions(
+        variant = "Ocean/World_Ocean_Reference"))
+}
+
+add_am_raster <- function(
+    m, 
+    r,
+    title,
+    cols = c("#FEB24C", "#FD8D3C", "#FC4E2A", "#E31A1C", "#B10026")){
+  # m: leaflet() map
+  # r: raster 
+  # TODO: migrate to terra::rast()
+  
+  # r     = r_gebco_bb
+  # title = "GEBCO depth (m)"
+  # cols  = RColorBrewer::brewer.pal(7, "Blues")
+  
+  r   <- leaflet::projectRasterForLeaflet(r, method = "bilinear")
+  pal <- leaflet::colorBin(
+    cols, na.omit(unique(values(r))), 
+    bins = length(cols), pretty = TRUE, na.color = "#00000000")
+  
+  e <- raster::extent(r) |> 
+    sf::st_bbox() |> 
+    st_as_sfc() |> 
+    st_as_sf(crs=3857) |> 
+    st_transform(4326) |> 
+    st_bbox()
+    
+  m |> 
+    leaflet::addRasterImage(
+      r, project = F, colors = pal, opacity = 0.8) |> 
+    addLegend(
+      values = raster::values(r), 
+      title = title, pal = pal) |> 
+    leaflet::fitBounds(
+      lng1 = e[["xmin"]], 
+      lat1 = e[["ymin"]], 
+      lng2 = e[["xmax"]], 
+      lat2 = e[["ymax"]])
+}
+```
+
+## Species map (blue whale)
+
+```{r}
+#| label: blue whale map
+
+# fuzzy search allows full text search operators AND, OR, NOT and +
+# see https://www.sqlitetutorial.net/sqlite-full-text-search/
+sp_term <- "blue whale"
+key <- am_search_fuzzy(search_term = sp_term) |> 
+  pull(key) # "ITS-Mam-180528"
+
+# get the identifier for the species
+r <- am_raster(key)
+
+# show the native habitat map
+m <- leaflet() |> 
+  add_ocean_basemap() |> 
+  add_am_raster(r, title = sp_term)
+m 
+```
+
+### Zoom to SoCal
+
+Notice the very large pixels, far bigger than useful for smaller planning purposes, such as for Sanctuaries or BOEM Wind Energy Areas.
+
+```{r}
+# Southern California
+bbox <- c(-121, 32, -117, 35)
+m |>
+  fitBounds(lng1 = bbox[1], lat1 = bbox[2], lng2 = bbox[3], lat2 = bbox[4])
+```
+
+
+## Environmental preferences
+
+Here are the environmental preferences for the species in the database.
+
+```{r}
+sp_env <- am_hspen() |> 
+  filter(SpeciesID == key) |> 
+  head(1) |> 
+  collect()
+
+sp_env |> 
+  collapse() |> 
+  glimpse()
+```
+
+Now let's convert all variables having `{Var}YN == 1` into the relative environmental suitability rhomboids [@kaschnerMappingWorldwideDistributions2006].
+
+```{r}
+var <- "Depth"
+
+d_probs <- tribble(
+  ~prob_name, ~prob_value,
+  "Min"      , 0,
+  "PrefMin"  , 1,
+  "PrefMax"  , 1,
+  "Max"      , 0)
+
+vars_yes <- sp_env |> 
+  select(ends_with("YN")) |> 
+  pivot_longer(
+    everything()) |> 
+  filter(value == 1) |> 
+  pull(name) |> 
+  str_replace("YN","")
+
+d <- sp_env |> 
+  select(starts_with(vars_yes)) |>
+  select(!ends_with("YN")) |> 
+  pivot_longer(
+    everything(),
+    values_to = "var_value") |> 
+  separate_wider_regex(
+    name,
+    c(var       = paste(vars_yes, collapse = "|"), # "",
+      prob_name = paste(d_probs$prob_name, collapse = "|"))) |> 
+  left_join(
+    d_probs,
+    by = "prob_name")
+d
+
+g <- ggplot(d, aes(var_value, prob_value)) +
+  geom_area() +
+  theme_light() +
+  facet_wrap(
+    vars(var), 
+    scales = "free") +
+  labs(
+    title    = sp_term,
+    subtitle = "environmental envelope",
+    x        = NULL,
+    y        = "probability of presence")
+g
+```
+
+
+## Depth (GEBCO) for SoCal
+
+
+```{r}
+# limit to bounding box for now
+ply_bb <- extent(
+  c(bbox[1], bbox[3], bbox[2], bbox[4])) |> 
+  st_bbox() |> 
+  st_as_sfc() |> 
+  st_as_sf(crs = 4326)
+
+# land
+if (!file.exists(land_socal_geo)){
+  ply_land <- ne_download(
+    scale       = 10, # 110/50/10: high spatial resolution (10 m)
+    type        = "land", 
+    category    = "physical",
+    returnclass = "sf")
+  # plot(ply_land)
+  ply_land_bb <- ply_land |> 
+    st_intersection(ply_bb)
+  # plot(ply_land_bb)
+  write_sf(ply_land_bb, land_socal_geo)
+}
+ply_land_bb <- read_sf(land_socal_geo)
+# plot(ply_land_bb)
+
+if (!file.exists(gebco_socal_tif)){
+  # read large GEBCO netcdf file outside repo
+  r_gebco <- raster(gebco_nc)
+  
+  # crop to SoCal bounding box
+  r_gebco_bb <- r_gebco |> 
+    crop(ply_bb)
+  
+  # mask out land, ie > 0 
+  r_gebco_bb <- r_gebco_bb |> 
+    mask(r_gebco_bb <= 0, maskvalue = 0)
+  writeRaster(r_gebco_bb, gebco_socal_tif, overwrite = T)
+}
+r_gebco_bb <- raster(gebco_socal_tif)
+
+m <- leaflet() |> 
+  add_ocean_basemap() |> 
+  add_am_raster(
+    r     = r_gebco_bb, 
+    title = "GEBCO depth (m)", 
+    cols  = RColorBrewer::brewer.pal(7, "Blues"))
+m 
+```
+
+## Downscale AquaMaps with Depth
+
+TODO: ...
+
+## References
