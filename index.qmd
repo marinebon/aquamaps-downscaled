@@ -1,5 +1,6 @@
 ---
-title: "AquaMaps to GEBCO v01 - blue whale"
+title: "Downscaling AquaMaps"
+subtitle: "v01 - blue whale"
 author: "Benjamin D. Best <ben@ecoquants.com>"
 date: now
 date-format: "YYYY-MM-DD HH:mm (z)"
@@ -17,7 +18,7 @@ editor_options:
 
 ## Overview
 
-**Goal**: Downscale [AquaMaps.org](https://aquamaps.org) species distributions [@kaschnerAquaMapsPredictedRange2023;@readyPredictingDistributionsMarine2010] from 0.5 decimal degrees to 15 arc seconds (~ 111 km to `r 111 / 60 / (15/60)` km at the equator), using  the R package [`aquamapsdata`](https://raquamaps.github.io/aquamapsdata/index.html) and the the General Bathymetric Chart of the Oceans [GEBCO](https://www.gebco.net/).
+**Goal**: Downscale [AquaMaps.org](https://aquamaps.org) species distributions [@kaschnerAquaMapsPredictedRange2023;@readyPredictingDistributionsMarine2010] from 0.5 decimal degrees to 15 arc seconds (111.11 km to `r (111.11 / 60 / 60 * 15) |> round(2)` km at the equator), using  the R package [`aquamapsdata`](https://raquamaps.github.io/aquamapsdata/index.html) and the the General Bathymetric Chart of the Oceans [GEBCO](https://www.gebco.net/).
 
 We start with the "Blue Whale" ([_Balaenoptera musculus_](https://aquamaps.org/preMap2.php?cache=1&SpecID=ITS-Mam-180528)) and Southern California. 
 
