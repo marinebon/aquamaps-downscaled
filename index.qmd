@@ -313,8 +313,76 @@ m <- leaflet() |>
 m 
 ```
 
-## TODO: Downscale AquaMaps with Depth
+## Ramp depth with species preference
 
-...
+
+### Create `ramp_env()` function
+
+```{r}
+#| label: fig-ramp_env
+#| fig-cap: Plot of original depth preferences for 4 points (black circles) and interpolated values (red asterisks) using new `ramp_env()` function.
+
+ramp_env <- function(v, min, min_pref, max, max_pref){
+  
+  x <- c(min, min_pref, max, max_pref)
+  y <- c(  0,        1,   1,        0)
+
+  approx(
+    x, y, 
+    xout   = v, 
+    yleft  = 0,
+    yright = 0,
+    rule   = 2,
+    method = "linear")$y
+}
+
+p <- d |> 
+  filter(var == !!var)
+p <- setNames(p$var_value, p$prob_name) |> as.list()
+# p
+#   Min PrefMin PrefMax     Max 
+#     0    1000    4000    8000
+
+x_pref <- c(p$Min, p$PrefMin, p$PrefMax, p$Max)
+y_pref <- c(  0,        1,   1,        0)
+x_new <- seq(-200, 10000, by=100)
+y_new <- ramp_env(x_new, p$Min, p$PrefMin, p$PrefMax, p$Max)
+
+plot(
+  x_pref,
+  y_pref, 
+  xlim = range(c(x_pref, x_new), na.rm=T), 
+  ylim = range(c(y_pref, y_new), na.rm=T),
+  xlab = var,
+  ylab = sp_term)
+points(x_new, y_new, col = 2, pch = "*")
+```
+
+### Apply to SoCal
+
+Apply the `ramp_env()` function to the SoCal depth using `r {sp_term}` preferences.
+
+```{r}
+#| label: fig-map_sp_depth_bb
+#| fig-cap: Map of depth preference for `r sp_term` applied to SoCal depth with the `ramp_env()` function.
+
+r_sp_depth_bb <- terra::app(
+  x        = terra::rast(r_gebco_bb), 
+  fun      = ramp_env, 
+  min      = p$Min, 
+  min_pref = p$PrefMin, 
+  max_pref = p$PrefMax,
+  max      = p$Max) |> 
+  raster()
+
+m <- leaflet() |> 
+  add_ocean_basemap() |> 
+  add_am_raster(
+    r                = r_sp_depth_bb, 
+    title            = glue("{sp_term}, {var} only"))
+m 
+```
+
+## TODO: Downscale global AquaMaps with all env preferences
 
 ## References
