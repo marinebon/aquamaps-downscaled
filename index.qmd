@@ -383,6 +383,67 @@ m <- leaflet() |>
 m 
 ```
 
-## TODO: Downscale global AquaMaps with all env preferences
+## Next Steps
+
+Goal: Downscale global AquaMaps with all env preferences
+
+```{r}
+vars_yn <- sp_env |> 
+  select(ends_with("YN")) |> 
+  names() |> 
+  str_replace("YN", "")
+vars_done <- c("Depth")
+```
+
+TODO: 
+
+- [ ] Gather finer resolution global data based on yes/no parameters (`*YN`):
+```{r}
+#| echo: false
+#| output: asis
+
+# vars_yn <- c("Depth", "Temp", "Salinity")
+vars_done <- list(
+  Depth = "[GEBCO](https://www.gebco.net)")
+vars_todo <- list()
+
+txt_cks  <- ifelse(vars_yn %in% names(vars_done), 'x', ' ')
+txt_info <- ifelse(
+  vars_yn %in% names(vars_done), 
+  vars_done[vars_yn], 
+  ifelse(
+    vars_yn %in% names(vars_todo), 
+    vars_todo[vars_yn], 
+    ""))
+glue("    - [{txt_cks}] {vars_yn}: {txt_info}", .trim = F)
+```
+- [ ] Work out rest of individual species workflow
+    - [ ] Apply `ramp_env()` to each environmental parameter applicable to the species (ie `{var}YN ==1`)
+    - [ ] Average all environmental parameter grids for the species
+    - [ ] Clip to `NMostLat`, `SMostLat`, `WMostLong`, `EMostLong`
+    - [ ] Mask to `FAOAreas`
+    - [ ] Figure out unknown fields: `ExtnRuleYN`, `MapOpt`, ...
+- [ ] Repeat for workflow for ALL species
+- [ ] Render maps from anywhere
+    - [ ] Store in COG with each species as a separate layer; or try individual layer COGs
+    - [ ] Upload COG to Google Cloud Storage
+    - [ ] Install [TiTiler](https://developmentseed.org/titiler) on MarineBON.app server
+    - [ ] Render map layers from COG using TiTiler in new function(s) borrowing from [`offhabr`](https://offshorewindhabitat.info/offhabr/index.html) functions like [`oh_map_cog_lyr()`](https://offshorewindhabitat.info/offhabr/reference/oh_map_cog_lyr.html)
+- [ ] Build Shiny app
+    - [ ] Render map of selected species from dropdown
+    - [ ] Summarize species from drawn area
+    - [ ] Summarize species from selected area from existing: 
+        - [ ] EEZ
+        - [ ] LME
+        - [ ] Sanctuary
+        - [ ] BOEM Wind Energy Area
+        - [ ] ...
+- [ ] Calculate biodiversity metrics
+    - [ ] Richness
+    - [ ] Abundance
+    - [ ] Extinction Risk
+    - [ ] Endemism
+    - [ ] Foundation Species
+    - [ ] ...
 
 ## References
