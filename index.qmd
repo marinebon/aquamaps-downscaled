@@ -387,22 +387,21 @@ m
 
 Goal: Downscale global AquaMaps with all env preferences
 
+TODO: 
+
+- [ ] Gather finer resolution global data based on yes/no parameters (`*YN`):
+
 ```{r}
+#| label: cklist_vars
+#| echo: false
+#| output: asis
+
 vars_yn <- sp_env |> 
   select(ends_with("YN")) |> 
   names() |> 
   str_replace("YN", "")
-vars_done <- c("Depth")
-```
-
-TODO: 
-
-- [ ] Gather finer resolution global data based on yes/no parameters (`*YN`):
-```{r}
-#| echo: false
-#| output: asis
-
 # vars_yn <- c("Depth", "Temp", "Salinity")
+
 vars_done <- list(
   Depth = "[GEBCO](https://www.gebco.net)")
 vars_todo <- list()
