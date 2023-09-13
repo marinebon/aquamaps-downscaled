@@ -7,17 +7,7 @@ if (!"librarian" %in% installed.packages())
   install.packages("librarian")
 
 # devtools::install_bitbucket("bklamer/rcrypt")  # aquamapsdata dependency
-
-# https://stackoverflow.com/questions/71669825/leaflet-side-by-side-for-2-raster-images-in-r
-lib_leaflet <- "/share/r-lib/leaflet-side-by-side-raster"
-# remotes::install_github(
-#   "rstudio/leaflet", 
-#   ref = "joe/feature/raster-options",
-#   lib = lib_leaflet)
-library(leaflet, lib.loc = lib_leaflet)
-
 librarian::shelf(
-  # assertive, 
   raquamaps/aquamapsdata, dplyr, here, 
   leaflet, leaflet.extras2, 
   raster, rgee, reticulate, sf, shiny)
