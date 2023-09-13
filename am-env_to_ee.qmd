@@ -1,0 +1,152 @@
+---
+title: "Upload AquaMaps 1/2° env rasters to Earth Engine"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# libraries ----
+Sys.setenv(
+  EARTHENGINE_GCLOUD = "/usr/bin/gcloud",
+  EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",
+  EARTHENGINE_ENV    = "rgee")
+
+if (!"librarian" %in% installed.packages())
+  install.packages("librarian")
+
+librarian::shelf(
+  raquamaps/aquamapsdata, 
+  dplyr, glue, here, 
+  rgee, sf, terra)
+
+# variables & paths -----
+tif  <- here("data/am-hcaf_v1-simple.tif")
+```
+
+```{r}
+# aquamaps database ----
+am_db <- default_db("sqlite")  # ~/.config/aquamaps/am.db
+
+# get aquamaps table of env values ----
+d <- am_hcaf() |> 
+  select(
+    hcaf_id   = ID,
+    ctr_lon   = CenterLong,
+    ctr_lat   = CenterLat,
+    FAOArea   = FAOAreaM,
+    Depth     = DepthMean,
+    Temp      = SSTAnMean,  # surface; TODO: bottom
+    Salinity  = SalinityMean,
+    PrimProd  = PrimProdMean,
+    IceCon    = IceConAnn) |> 
+  collect()
+
+# raster template ----
+# range(d$ctr_lon)  # -179.75  179.75
+# range(d$ctr_lat)  # - 78.25   89.75
+r_template <- rast(
+  xmin       = min(d$ctr_lon) - 0.25,
+  xmax       = max(d$ctr_lon) + 0.25,
+  ymin       = min(d$ctr_lat) - 0.25,
+  ymax       = max(d$ctr_lat) + 0.25,
+  resolution = c(0.5, 0.5),
+  crs = "epsg:4326")
+
+# data frame to points ----
+p <- d |>
+  st_as_sf(
+    coords = c("ctr_lon", "ctr_lat"),
+    remove = F,
+    crs    = 4326) |> 
+  arrange(ctr_lon, ctr_lat)
+# p[1:25,] |> 
+#   mapview::mapView()
+
+# points to raster ----
+get_r <- function(v){
+  r <- rasterize(p, r_template, field = v)
+  names(r) <- v
+  r
+}
+
+r <- NULL
+for (v in names(d)){
+  message(glue("v: {v}"))
+  
+  if (is.null(r)){
+    r <- get_r(v)
+  } else {
+    r <- rast(list(r, get_r(v)))
+  }
+}
+
+# plot(r["ctr_lat"])
+writeRaster(r, tif, overwrite=T)
+```
+
+```{r}
+gcs_bucket <- "eq-am-fine"
+
+r <- rast(tif)
+
+Sys.setenv(
+  "GCS_DEFAULT_BUCKET" = gcs_bucket,
+  "GCS_AUTH_FILE"      = "/share/data/eq-am-fine-98c68d6f5f96.json")
+librarian::shelf(
+  googleCloudStorageR, jsonlite,
+  offshorewindhabitat/offhabr, purrr)
+
+# gcs_delete_object(basename(tif))
+gcs_upload(
+  file = tif,
+  name = basename(tif))
+
+gcs_update_object_acl(
+  basename(tif), entity_type = "allUsers")
+
+# gcs_to_gee(
+#   gcs_name     = basename(tif),
+#   gcs_bucket   = gcs_bucket,
+#   gee_asset    = "users/ben-ecoquants/aquamaps-downscaled",
+#   missing_data = NA)
+# https://github.com/offshorewindhabitat/offhabr/blob/ac5bb1491ff2a6e6475a2f5d08c9b093af961a9a/R/gcloud.R#L51-L77
+gcs_name     = basename(tif)
+gcs_bucket   = gcs_bucket
+gee_asset    = "projects/eq-am-fine/assets/sdmpredictors"
+gee_name     = fs::path_ext_remove(gcs_name)
+properties   = list(
+  commments = "only sea surface Temp(erature)")
+
+f_json <- tempfile(fileext = ".json")
+properties_json <- toJSON(properties, pretty=T, auto_unbox=T)
+
+bands_categorical <- c("hcaf_id", "FAOArea")
+bands_json <- tibble(
+  id = names(r)) |> 
+  mutate(
+   tileset_band_index = 0:(n() - 1),
+   pyramiding_policy  = map_chr(
+     id, 
+     \(x) ifelse(
+       x %in% bands_categorical,
+       "MODE",
+       "MEAN"))) |> 
+  toJSON(pretty=T, auto_unbox=T) # cat(bands_json)
+
+glue(
+  '{{
+       "name": "{gee_asset}/{gee_name}",
+       "tilesets":[{{"sources":[{{"uris":["gs://{gcs_bucket}/{gcs_name}"]}}]}}],
+       "pyramidingPolicy":"MEAN",
+       "bands": {bands_json},
+       "properties": {properties_json}
+    }}') |>
+  writeLines(f_json)
+# readLines(f_json) |> cat()
+
+cmd <- glue::glue("/opt/venv/rgee/bin/earthengine upload image --manifest '{f_json}'")
+system(cmd)
+
+```
