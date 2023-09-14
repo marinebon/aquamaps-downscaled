@@ -77,86 +77,96 @@ add_ocean_basemap <- function(m, ...){
         l = ...))
 }
 
-calc_im_sp_fine <- function(sp_env){
+calc_im_sp_fine <- function(sp_info){
   
   # apply environmental constraints
-  im_depth_iy    = im_depth$
-    interpolate(sp_env[['Depth']], c(0,1,1,0), 'clamp')$
-    multiply(100)$
-    rename("depth")$
-    uint8()
+  bands_gb <- im_gb$bandNames()$getInfo()
+  ims_env <- c()
+  im_mask_env <- im_gb$select("Depth")$
+    where(im_gb$select("Depth")$gte(0), 1)
+  for (b in names(sp_info$env)){ 
+    # message(glue::glue("b: {b}"))
+    
+    im <- im_gb$select(b) # qmap(im)
+    # ee_print(im)
+    if (b == "PrimProd")
+      im <- im$multiply(1000)
+    if (all(diff(sp_info$env[[b]]) > 0)){
+      im <- im$interpolate(sp_info$env[[b]], c(0,1,1,0), 'clamp')
+    } else {
+      i_d <- which(diff(sp_info$env[[b]]) > 0)
+      i <- min(i_d):(max(i_d)+1)
+      # rng <- range(sp_info$env[[b]][i])
+      im <- im$
+        interpolate(sp_info$env[[b]][i], c(0,1,1,0)[i], 'mask')
+      # qmap(im)
+      # qmap(im$mask())
+    }
+    im <- im$
+      multiply(100)$
+      rename("env")$
+      uint8()
+    ims_env <- c(ims_env, im)
+    
+    # update mask
+    im_mask_env = im_mask_env$
+      where(im$eq(0), 0)$
+      where(im$mask()$eq(0), 0)
+    # qmap(im_mask_env)
+  }
   
-  im_temp_iy     = im_bo$select('b1')$
-    interpolate(sp_env[['Temp']], c(0,1,1,0), 'clamp')$
-    multiply(100)$
-    rename("temp")$
-    uint8()
-  
-  im_salinity_iy = im_bo$select('b2')$
-    interpolate(sp_env[['Salinity']], c(0,1,1,0), 'clamp')$
-    multiply(100)$
-    rename("salinity")$
-    uint8()
-  
-  im_primprod_iy = im_bo$select('b3')$
-    multiply(1000)$
-    interpolate(sp_env[['PrimProd']], c(0,1,1,0), 'clamp')$
-    multiply(100)$
-    rename("primprod")$
-    uint8()
-  
-  im_icecon_iy   = im_bo$select('b4')$
-    interpolate(sp_env[['IceCon']], c(0,1,1,0), 'clamp')$
-    multiply(100)$
-    rename("icecon")$
-    uint8()
-  
-  im_sp = ee$ImageCollection(c(
-    im_depth_iy$rename('env'), 
-    im_icecon_iy$rename('env'),
-    im_primprod_iy$rename('env'),
-    im_salinity_iy$rename('env'),
-    im_temp_iy$rename('env') ))$
+  # average environmental interpolations
+  im_sp = ee$ImageCollection(ims_env)$
     mean()$
     uint8()$
     rename('sp')
+  # qmap(im_sp)
   
   # fao mask
-  fc_fao_sp = fc_fao$filter(ee$Filter$inList('zone', sp_env[['FAOAreas']]))
+  fc_fao_sp = fc_fao$filter(ee$Filter$inList('zone', sp_info[['FAOAreas']]))
   im_fao_mask = ee$ImageCollection(c(
     ee$Image$constant(0)$toInt(),
     ee$Image$constant(1)$toInt()$clipToCollection(fc_fao_sp) ))$mosaic()
+  # qmap(im_fao_mask)
   
   # apply env + fao mask
-  im_mask = im_depth_iy$
-    where(im_icecon_iy$eq(0), 0)$
-    where(im_primprod_iy$eq(0), 0)$
-    where(im_salinity_iy$eq(0), 0)$
-    where(im_temp_iy$eq(0), 0)$
-    where(im_fao_mask$eq(0), 0)$
-    where(im_sp$lt(10), 0)
-  im_sp   = im_sp$mask(im_mask)
+  im_mask <- im_mask_env$
+    where(im_fao_mask$eq(0), 0)
+  # qmap(im_mask_env)
+  # qmap(im_mask)
+  im_sp <- im_sp$
+    mask(im_mask)
+  # qmap(im_sp)
   
   im_sp
 }
 
-calc_im_sp_coarse <- function(sp_env){
+calc_im_sp_coarse <- function(sp_info){
 
   # apply environmental constraints
   bands_am <- im_am$bandNames()$getInfo()
   ims_env <- c()
-  im_depth <- im_am$select("Depth")
-  im_mask_env <- im_depth$
-    where(im_depth$neq(0), 1)
-  for (b in intersect(names(sp_env), bands_am)){ 
-    # b = intersect(names(sp_env), bands_am)[1]
+  im_mask_env <- im_am$select("Depth")$
+    where(im_am$select("Depth")$gte(0), 1)
+  for (b in names(sp_info$env)){ 
     # message(glue::glue("b: {b}"))
     
-    im <- im_am$select(b)
+    im <- im_am$select(b) # qmap(im)
+    # ee_print(im)
     # if (b == "PrimProd")
     #   im <- im$multiply(1000)
+    if (all(diff(sp_info$env[[b]]) > 0)){
+      im <- im$interpolate(sp_info$env[[b]], c(0,1,1,0), 'clamp')
+    } else {
+      i_d <- which(diff(sp_info$env[[b]]) > 0)
+      i <- min(i_d):(max(i_d)+1)
+      # rng <- range(sp_info$env[[b]][i])
+      im <- im$
+        interpolate(sp_info$env[[b]][i], c(0,1,1,0)[i], 'mask')
+      # qmap(im)
+      # qmap(im$mask())
+    }
     im <- im$
-      interpolate(sp_env[[b]], c(0,1,1,0), 'clamp')$
       multiply(100)$
       rename("env")$
       uint8()
@@ -164,7 +174,8 @@ calc_im_sp_coarse <- function(sp_env){
 
     # update mask
     im_mask_env = im_mask_env$
-      where(im$eq(0), 0)
+      where(im$eq(0), 0)$
+      where(im$mask()$eq(0), 0)
   }
   # qmap(im)
   # qmap(im_mask_env)
@@ -181,8 +192,8 @@ calc_im_sp_coarse <- function(sp_env){
   im_mask_fao <- im_fao$
     where(im_fao$neq(0), 0)
   # qmap(im_fao_mask)
-  for (a in sp_env[["FAOAreas"]]){ 
-    # a = sp_env[["FAOAreas"]][1]
+  for (a in sp_info[["FAOAreas"]]){ 
+    # a = sp_info[["FAOAreas"]][1]
     # message(glue::glue("FAOArea: {a}"))
     im_mask_fao = im_mask_fao$
       where(im_fao$eq(a), 1)
@@ -203,6 +214,129 @@ calc_im_sp_coarse <- function(sp_env){
   
   im_sp
 }
+
+get_am_spp <- function(){
+  am_spp <- tbl(am_db, "speciesoccursum_r") |> 
+    select(
+      SpeciesID, SpecCode, Genus, Species) |> 
+
+  distinct() |> 
+    collect() |> 
+    mutate(
+      sp_sci = glue("{Genus} {Species}")) |> 
+    arrange(sp_sci)
+  # nrow(am_spp)                             # 23,699
+  # am_spp$Kingdom |> unique() |> length()   #      5
+  # am_spp$Phylum  |> unique() |> length()   #     34
+  # am_spp$Class   |> unique() |> length()   #     70
+  # am_spp$Order   |> unique() |> length()   #    298
+}
+
+get_sp_info <- function(sp_code){
+  
+  d_hspen <- tbl(am_db, "hspen_r") |> 
+    filter(Speccode == !!sp_code) |>
+    collect() |> 
+    # TODO: filter by sp_id vs sp_code
+    #   eg sp_code == 46802: 
+    #     "sp_scientific": ["Ammodytoides gilli", "Isopora palifera"]
+    #     "sp_id"        : ["Fis-138579"        , "W-Scl-730686"]
+    slice(1)
+  
+  vars_yes <- d_hspen |> 
+    select(ends_with("YN")) |> 
+    pivot_longer(
+      everything()) |> 
+    filter(value == 1) |> 
+    pull(name) |> 
+    str_replace("YN","")
+  
+  d_probs <- tribble(
+    ~prob_name, ~prob_value,
+    "Min"      , 0,
+    "PrefMin"  , 1,
+    "PrefMax"  , 1,
+    "Max"      , 0)
+  
+  d_env <- d_hspen |> 
+    select(starts_with(vars_yes)) |>
+    select(!ends_with("YN")) |> 
+    pivot_longer(
+      everything(),
+      values_to = "var_value") |> 
+    separate_wider_regex(
+      name,
+      c(var       = paste(vars_yes, collapse = "|"), # "",
+        prob_name = paste(d_probs$prob_name, collapse = "|"))) |> 
+    left_join(
+      d_probs,
+      by = "prob_name")
+  
+  l_env <- d_env |> 
+    group_by(var) |> 
+    summarise(
+      vec = list(var_value)) |> 
+    deframe()
+  
+  sp_info <- list()
+  
+  d_sp <- am_spp |> 
+    filter(SpecCode == sp_code)
+  sp_info["sp_scientific"] <- list(d_sp$sp_sci)
+  sp_info["sp_code"]       <- list(d_sp$SpecCode)
+  sp_info["sp_id"]         <- list(d_sp$SpeciesID)
+  
+  sp_info["FAOAreas"] <- d_hspen$FAOAreas |> 
+    str_split(", ") %>%
+    .[[1]] |> 
+    as.integer() |> 
+    list()
+  
+  sp_info["env"] <- list(l_env)
+  
+  d_sp <- tbl(am_db, "speciesoccursum_r") |> 
+    filter(SpecCode == !!sp_code) |> 
+    collect()
+  
+  sp_info$taxa <- d_sp |> 
+      select(Kingdom, Phylum, Class, Order, Family) |> 
+      pivot_longer(everything()) |> 
+      deframe() |> 
+      as.list()
+  
+  sp_info$attr <- d_sp |> 
+    select(
+      deepwater, angling, diving, dangerous, m_invertebrates, 
+      highseas, invasive, resilience) |> 
+    mutate(across(everything(), as.character)) |> 
+    pivot_longer(everything()) |> 
+    deframe() |> 
+    as.list()
+  
+  sp_info$iucn <- d_sp |> 
+    select(
+      iucn_id, iucn_code, iucn_version, provider) |> 
+    mutate(across(everything(), as.character)) |> 
+    pivot_longer(everything()) |> 
+    deframe() |> 
+    as.list()
+  
+  # deepwater,        # Does the species occur in the deep-sea (i.e. tagged bathypelagic or bathydemersal in FishBase or SeaLifeBase)? 0=No, 1=Yes
+  # angling,          # Is the species a sport fish (i.e. tagged as a GameFish in FishBase)? 0=No, 1=Yes
+  # diving,           # Is the species found on a dive (i.e. where DepthPrefMin in HSPEN < 20 meters)? 0=No, 1=Yes
+  # dangerous,        # Is the species dangerous (i.e. tagged as ‘traumatogenic or venonous’ in FishBase or SeaLifeBase)? 0=No, 1=Yes
+  # m_invertebrates,  # Is the species a marine invertebrate? 0=No, 1=Yes
+  # highseas,         # Is the species an open ocean fish species (i.e. tagged as pelagic-oceanic in FishBase)? 0=No, 1=Yes
+  # invasive,         # Is the species recorded to be invasive (i.e. in FishBase or SeaLifeBase)? 0=No, 1=Yes
+  # resilience,       # Resilience of the species (i.e. as recorded in FishBase/SeaLifeBase) [varchar]
+  # iucn_id,          # IUCN species identifier	[int]
+  # iucn_code,        # IUCN Red list classification assigned to the species [varchar]
+  # iucn_version,     # IUCN version [varchar]
+  # provider) |>      # FishBase (FB) or SeaLifeBase (SLB)? [varchar]
+  
+  sp_info
+}
+
 
 rename_bands_bio_oracle <- function(){
   # TODO!
@@ -242,7 +376,8 @@ rename_bands_bio_oracle <- function(){
   task_im$start()
 }
 
-qmap <- function(im, rng = NULL, ...){
+qmap <- function(
+    im, rng = NULL, palette = c('011de2', 'afafaf', '3603ff', 'fff477', 'b42109'), ...){
   
   if (is.null(rng)){
     rng = im$reduceRegion(
@@ -259,6 +394,6 @@ qmap <- function(im, rng = NULL, ...){
     im, 
     list(
       min = rng[1], max = rng[2],
-      palette = c('011de2', 'afafaf', '3603ff', 'fff477', 'b42109')),
+      palette = palette),
     ...)
 }
