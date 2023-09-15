@@ -1,7 +1,10 @@
 shinyUI(fluidPage(
   fluidRow(
     column(
-      9, 
+      2, 
+      h4("DRAFT AquaMaps Downscaling")),
+    column(
+      7, 
       selectizeInput(
         "sel_sp", "Species", choices = integer(0), multiple = F, width = "100%")),
     column(
