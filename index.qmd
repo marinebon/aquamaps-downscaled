@@ -9,12 +9,14 @@ format:
     toc: true
     toc-depth: 3
     number-sections: true
+    shift-heading-level-by: -1
     code-fold: true
     code-tools: true
   docx:
     toc: true
     toc-depth: 3
     number-sections: true
+    shift-heading-level-by: -1
     code-fold: true
 bibliography: "mbon-bio-idx.bib"
 editor_options: 
@@ -74,6 +76,7 @@ dir_big         <- "/Users/bbest/big"
 gebco_nc        <- glue("{dir_big}/gebco_2022_sub_ice_topo/GEBCO_2022_sub_ice_topo.nc")
 gebco_socal_tif <- here("data/gebco_socal.tif")
 land_socal_geo  <- here("data/land_socal.geojson")
+bo_tif          <- here("data/bio-oracle.tif")
 
 # custom functions ----
 add_ocean_basemap <- function(m){
@@ -383,6 +386,460 @@ m <- leaflet() |>
 m 
 ```
 
+
+## `sdmpredictors`
+
+```{r}
+#| label: bio-oracle bo_tif
+
+librarian::shelf(
+  sdmpredictors, skimr)
+
+# exploring the marine datasets 
+datasets <- list_datasets(terrestrial = FALSE, marine = TRUE)
+
+kable(datasets)
+
+# exploring the marine layers 
+layers <- list_layers(datasets)
+
+# names(layers)
+
+# skim(layers)
+
+# table(layers$dataset_code)
+# Bio-ORACLE    MARSPEC 
+#        918         42 
+# table(layers$primary_type)
+#                                             ''                     GEBCO / EMODnet Bathymetry 
+#                                              1                                              3 
+#                            in situ measurement    in situ measurements, monthly climatologies 
+#                                              7                                             17 
+#                                          Model  Satellite (Aqua-MODIS), monthly climatologies 
+#                                            831                                             31 
+# Satellite (Aqua-MODIS), seasonal climatologies     Satellite (SeaWIFS), monthly climatologies 
+#                                              2                                              4 
+#                               Satellite (SRTM)        Satellite (Terra-MODIS), monthly images 
+#                                              7                                              6 
+#                              satellite imagery 
+#                                             51 
+
+# table(layers$units)
+#               %         Celsius         degrees degrees Celcius      E/m^2/year Einstein/m_/day        fraction 
+#               6              21               2              72              54               4              18 
+#       g/m^3/day      kilometers               m             m/s            m^-1          meters          mg/m^3 
+#              72               1              18              72               6               4              76 
+#      micromol/L    micromol/m^3            ml/l         mol/m^3             PSS             psu         radians 
+#               3             432               1               2              73              17               2 
+#        unitless 
+#               4
+
+# layers |> 
+  # select(
+  #   layer_code, name, description, units, 
+  #   primary_spatial_resolution, primary_source) |> 
+  # filter(str_detect(description, regex("roductivity", ignore_case = T))) |> 
+  # filter(str_detect(description, regex("Mean sea surface net primary productivity", ignore_case = T))) |> 
+  # filter(str_detect(description, regex("Sea surface temperature (mean)", ignore_case = T))) |> 
+  # filter(str_detect(description, regex("salinity", ignore_case = T))) |> 
+  # filter(str_detect(description, regex("ice", ignore_case = T))) |> 
+  # View()
+
+
+# https://aquamaps.org/main/files/HCAF_v7.zip
+# 
+# - PrimProdMean: Original unit in gC·m-3·day-1, converted to mgC·m-3·day-1. If OceanArea=0 (i.e. land cell), non-zero values were set to null (53 cells). Bio-ORACLE grid only goes down to 78.5 S, 1,869 ocean cells tagged -9999.
+
+# layers |> 
+#   filter(layer_code == "BO22_ppmean_ss") |> 
+#   mutate(across(everything(), as.character)) |> 
+#   pivot_longer(everything()) |> 
+#   kable()
+# units: g/m^3/day    
+
+# get Bio-Oracle (BO) latest version (22)
+lyrs <- c(
+  Temp     = "BO22_tempmean_ss",
+  Salinity = "BO22_salinitymean_ss",
+  PrimProd = "BO22_ppmean_ss",
+  IceCon   = "BO22_icecovermean_ss")
+  
+# download to temporary directory
+if (!file.exists(bo_tif)){
+
+  stk <- load_layers(lyrs, datadir = here("data/bio-oracle/temp"))
+
+  # class      : RasterStack 
+  # dimensions : 2160, 4320, 9331200, 4  (nrow, ncol, ncell, nlayers)
+  # resolution : 0.08333333, 0.08333333  (x, y)
+  # extent     : -180, 180, -90, 90  (xmin, xmax, ymin, ymax)
+  # crs        : +proj=longlat +datum=WGS84 +no_defs 
+  # names      : BO22_tempmean_ss, BO22_salinitymean_ss, BO22_ppmean_ss, BO22_icecovermean_ss 
+  # min values :        -1.797733,             0.059304,       0.000060,             0.000000 
+  # max values :        30.178629,            40.651300,       0.257881,             0.974730
+
+  # get x arg for [ee.Image.interpolate()](https://developers.google.com/earth-engine/apidocs/ee-image-interpolate)
+  # d |> 
+  #   # filter(var == "Temp") |>       # -1.8, -1.3, 27.87, 32.07
+  #   # filter(var == "Salinity") |>   # 3.58, 32.57, 35.49, 38.84
+  #   # filter(var == "PrimProd") |>   # 0.1, 1.4, 16.07, 119.58
+  #   filter(var == "IceCon") |>       # -0.88, 0, 0.49, 0.96
+  #   pull(var_value) |> 
+  #   paste(collapse=", ") |> 
+  #   cat()
+  
+  raster::writeRaster(stk, bo_tif)
+}
+
+# librarian::shelf(terra)
+# plet(rast(bo_tif)[[1]])
+```
+
+## manual upload with retry
+
+```{r}
+#| label: upload to GCS, GEE
+#| eval: false
+
+librarian::shelf(googleCloudStorageR)
+
+gcs_auth_json <- "/Users/bbest/My Drive/private/offhab-google-service-account_09e7228ac965.json"
+gcs_bucket    <- "offhab_lyrs"
+name          <- "bio-oracle.tif"
+
+Sys.setenv(
+  "GCS_DEFAULT_BUCKET" = gcs_bucket,
+  "GCS_AUTH_FILE"      = gcs_auth_json)
+
+u <- googleCloudStorageR::gcs_upload(
+  file          = bo_tif,
+  bucket        = "offhab_lyrs",
+  name          = basename(bo_tif))
+# ℹ 2023-07-30 18:38:57.609799 > Found resumeable upload URL:  https://www.googleapis.com/upload/storage/v1/b/offhab_lyrs/o/?uploadType=resumable&name=bio-oracle.tif&predefinedAcl=private&upload_id=ADPycduT4eJUJFQA3c-cdYj6U-3ljbVu6IItZxtQi3WyE68uSdBS_o6uuL1Pq8kJnFvr5jdZfJgcw9_ZPGmlZKzXC3C8Zw
+# retry
+u2 <- googleCloudStorageR::gcs_retry_upload(u)
+
+# https://code.earthengine.google.com/?asset=projects/eq-am-fine/assets/sdmpredictors
+
+gcs_to_gee <- function (
+    gcs_name, 
+    gee_name          = fs::path_ext_remove(gcs_name), 
+    properties        = "", 
+    gcs_bucket        = "offhab_lyrs", 
+    gee_asset         = "projects/eq-am-fine/assets/sdmpredictors", 
+    pyramiding_policy = "MEAN"
+    # missing_data      = 255
+    ){
+  
+    f_json <- tempfile(fileext = ".json")
+    properties_json <- jsonlite::toJSON(properties, pretty = T,
+        auto_unbox = T)
+    # writeLines(glue::glue("{{\n       \"name\": \"{gee_asset}/{gee_name}\",\n       \"tilesets\":[{{\"sources\":[{{\"uris\":[\"gs://{gcs_bucket}/{gcs_name}\"]}}]}}],\n       \"pyramidingPolicy\":\"MEAN\",\n       \"properties\": {properties_json},\n       \"missing_data\":{{\"values\":[{missing_data}]}}\n    }}"), 
+    writeLines(glue::glue("{{\n       \"name\": \"{gee_asset}/{gee_name}\",\n       \"tilesets\":[{{\"sources\":[{{\"uris\":[\"gs://{gcs_bucket}/{gcs_name}\"]}}]}}],\n       \"pyramidingPolicy\":\"MEAN\",\n       \"properties\": {properties_json} }}"), 
+        f_json)
+    cmd <- glue::glue("earthengine upload image --manifest '{f_json}'")
+    message(cmd)
+    system(cmd)
+    return(glue("{gee_asset}/{gee_name}"))
+}
+
+
+gcs_to_gee(
+  basename(bo_tif),
+  properties = list(
+    source  = "sdmpredictors"))
+
+# readLines("/var/folders/sl/7s3zmk1129jcrgsn1c4hcs2r0000gn/T//Rtmp2X9EGE/file5883322f397b.json") |> cat()
+
+
+# tif <- "/Users/bbest/Downloads/depth_m0000000000-0000000000.tif"
+# tif <- "/Users/bbest/Downloads/depth_m0000023552-0000000000.tif"
+# tif <- "/Users/bbest/Downloads/depth_m0000376832-0000000000.tif"
+# r <- rast(tif)
+# r
+# terra::plet(r)
+```
+
+
+- [problems here possibly in version 0.6-1 of stars](https://github.com/r-spatial/stars/commit/b70735ac26c58155ecc6b137d2dcdde586b03f4b#diff-51920e95310ebfbc1ae31709f3b95f89afffbf4f1a6e38e8b2b406e2fb6197eaR3)
+  > # version 0.6-1
+  > * `[<-.stars_proxy()` clones environment, so that after `r[r > 100]<-NA` we don't get infinite recursion when realizing `r`
+
+
+- [General Bathymetric Chart of the Oceans (GEBCO) - awesome-gee-community-catalog](https://gee-community-catalog.org/projects/gebco/)
+- [Resampling and Reducing Resolution | Google Earth Engine | Google for Developers](https://developers.google.com/earth-engine/guides/resample)
+
+
+Generate from ramps in GEE with:
+
+- [`ee.Algorithms.If()`](https://developers.google.com/earth-engine/guides/ic_mapping)
+  - [Computations using Images | Google Earth Engine | Google for Developers](https://developers.google.com/earth-engine/tutorials/tutorial_api_03)
+  - [javascript - Google Earth Engine: Apply scaling function to band values of image - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/368016/google-earth-engine-apply-scaling-function-to-band-values-of-image)
+  - [Applying Raster Calculation to Image Collection in Google Earth Engine - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/370706/applying-raster-calculation-to-image-collection-in-google-earth-engine)
+- [`Image.unitScale(low, high)`](https://developers.google.com/earth-engine/apidocs/ee-image-unitscale)
+  - [google earth engine - Rescale NDVI [-1,1] to 0-255 using GEE - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/418562/rescale-ndvi-1-1-to-0-255-using-gee)
+
+## Try COG
+
+- [GEE: export_depth](https://code.earthengine.google.com/?scriptPath=users%2Fben-ecoquants%2Faquamaps-downscaled%3Aexport_depth)
+
+```{r cog, eval=FALSE}
+
+# devtools::install_github("r-spatial/stars")
+librarian::shelf(
+  offshorewindhabitat/offhabr, glue, here, fs, stars, terra)
+
+depth_tif <- glue("{path_ext_remove(gebco_nc)}_bathy.tif")
+depth_cog <- glue("{path_ext_remove(gebco_nc)}_bathy_cog.tif")
+
+# read large GEBCO netcdf file outside repo
+r_gebco <- rast(gebco_nc)
+# terra::writeRaster(r_gebco, depth_cog)
+
+r_d190 <- read_stars(gebco_nc) |> 
+  st_downsample(190)
+r_d190[r_d190 > 0] = NA
+plot(r_d190)
+
+system.time({r <- rast(gebco_nc)}) # 10516.380 secs elapsed
+system.time({r[r > 0] = NA})       # 5915.483  secs elapsed 
+system.time({r <- r * -1})         # 190.878   secs elapsed
+system.time({writeRaster(r, depth_tif, datatype = "INT2U")})
+
+r <- rast(depth_tif)
+
+system.time({
+offhabr::write_rast(
+  # r,
+  depth_tif,
+  depth_cog,
+  datatype     = "INT2U",
+  overwrite    = TRUE,
+  method       = "average",
+  threads      = "ALL_CPUS",
+  epsg         = 4326,
+  verbose      = T,
+  web_optimize = F,
+  use_gdal_cog = T)          # system.time(): 2183.913 secs elapsed
+})
+
+# install.packages("googleCloudStorageR")
+librarian::shelf(googleCloudStorageR)
+# ✔ Setting scopes to https://www.googleapis.com/auth/devstorage.full_control and https://www.googleapis.com/auth/cloud-platform
+# ✔ Successfully auto-authenticated via /Users/bbest/My Drive/private/offhab-google-service-account_09e7228ac965.json
+# ✔ Set default bucket name to 'offhab_lyrs'
+upload_to_gcs(
+  file          = depth_cog,
+  name          = "depth_gebco_m.tif",
+  make_public   = T,
+  gcs_auth_json =
+    "/Users/bbest/My Drive/private/offhab-google-service-account_09e7228ac965.json",
+  gcs_bucket    = "offhab_lyrs") # 3 GB at 3 MBPS: 2 hrs 23 mins
+# ℹ 2023-07-30 14:58:35.94178 > File size detected as  3.1 Gb
+# ℹ 2023-07-30 14:58:37.120278 > Found resumeable upload URL:  https://www.googleapis.com/upload/storage/v1/b/offhab_lyrs/o/?uploadType=resumable&name=depth_gebco_m.tif&predefinedAcl=private&upload_id=ADPycdun6IdndMKBjpKcpL2KvQV145Q6pzsFt5F7-c7ZdRgtmzTH_-sSe9JfKUebpJiKZib-a6MCKYyGFzNh9hYABimF
+
+# manual upload with retry
+gcs_auth_json <- "/Users/bbest/My Drive/private/offhab-google-service-account_09e7228ac965.json"
+gcs_bucket    <- "offhab_lyrs"
+name          <- "depth_gebco_m.tif"
+Sys.setenv(
+  "GCS_DEFAULT_BUCKET" = gcs_bucket,
+  "GCS_AUTH_FILE"      = gcs_auth_json)
+
+u <- googleCloudStorageR::gcs_upload(
+  file          = depth_cog,
+  bucket        = "offhab_lyrs",
+  name          = name)
+Sys.time()
+
+tif <- "/Users/bbest/Github/marinebon/aquamaps-downscaled/data/gebco_socal_cog.tif"
+u <- googleCloudStorageR::gcs_upload(
+  file          = tif,
+  bucket        = "offhab_lyrs",
+  name          = basename(tif))
+# make publicly available
+googleCloudStorageR::gcs_update_object_acl(
+   basename(tif), entity_type = "allUsers")
+
+
+# retry
+u2 <- googleCloudStorageR::gcs_retry_upload(u)
+
+# make publicly available
+googleCloudStorageR::gcs_update_object_acl(
+  name, entity_type = "allUsers")
+
+
+
+Sys.time()
+
+# TODO: upload depth_cog to GCStorage and try in leaflet
+
+# OLD...
+write_stars(st_g, depth_cog, type="Int16")
+
+s <- read_stars(depth_cog)
+plot(s)
+
+st_gebco <- read_stars(
+  depth_cog, 
+  proxy=T)
+plot(st_gebco < 0) # downsample set to 190
+
+system.time({
+st_gebco[st_gebco > 0] = NA  # system.time():  mins elapsed
+})
+plot(st_gebco, downsample=190) 
+# Error in `[<-.stars`(x = x, i = i, value = value, downsample = downsample) : 
+#   unused argument (downsample = downsample)
+#   https://github.com/r-spatial/stars/issues/627
+write_stars(st_gebco, depth_cog)
+
+
+plot(st_gebco)
+
+system.time({
+st_gebco <- st_gebco * -1     # system.time(): 4.042083 mins elapsed
+})
+
+
+
+```
+
+
+```{r gdalcubes, eval=FALSE}
+
+librarian::shelf(
+  gdalcubes, glue, here, fs, stars, terra)
+
+gebco_socal_cog <-  glue("{path_ext_remove(gebco_socal_tif)}_cog.tif")
+r <- read_stars(gebco_socal_tif)
+d <- stars::st_dimensions(r)
+
+# does not work:
+# file_delete(gebco_socal_cog)
+# write_stars(r, gebco_socal_cog, driver="COG", type="UInt16")
+
+ic <- create_image_collection(
+  files     = gebco_socal_tif, 
+  date_time = as.Date("1970-01-01"))
+
+cv <- cube_view(
+  extent      = extent(ic,"EPSG:4326"), 
+  srs         = "EPSG:4326", 
+  dt          = "P1Y", 
+  nx          = d$x$to, 
+  ny          = d$y$to, 
+  aggregation = "mean", 
+  resampling  = "bilinear")
+
+write_tif(
+  raster_cube(ic, cv),
+  dir              = here("data"),
+  prefix           = "cube_",
+  overviews        = T,
+  COG              = T,
+  rsmpl_overview   = "bilinear",
+  creation_options = NULL,
+  write_json_descr = T)
+
+
+# cube_1970-01-01.tif
+```
+
+
+
+```{r leafem.addCOG, eval=F}
+librarian::shelf(
+  r-spatial/leafem, leaflet, stars, viridisLite)
+
+url <- "https://storage.googleapis.com/offhab_lyrs/cube_1970-01-01.tif"
+r <- rast(glue("/vsicurl/{url}"))
+
+pal = hcl.colors(256, "inferno")
+brks = NULL
+
+myCustomJSFunc = htmlwidgets::JS(
+  "
+    pixelValuesToColorFn = (raster, colorOptions) => {
+      const cols = colorOptions.palette;
+      var scale = chroma.scale(cols);
+
+      if (colorOptions.breaks !== null) {
+        scale = scale.classes(colorOptions.breaks);
+      }
+      var pixelFunc = values => {
+        let clr = scale.domain([raster.mins, raster.maxs]);
+        if (isNaN(values)) return colorOptions.naColor;
+        if (values < 50) return chroma('pink').alpha(0.7).hex();
+        return clr(values).hex();
+      };
+      return pixelFunc;
+    };
+  "
+)
+
+leaflet() |>
+  addTiles() |>
+  addCOG(
+    url          = url, 
+    layerId      = "band1",
+    group        = "COG", 
+    resolution   = 512, 
+    opacity      = 0.9,
+    autozoom     = TRUE,
+    colorOptions = colorOptions(
+      palette = viridisLite::inferno,
+      breaks  = seq(1,5349, by=500),
+      na.color = "transparent"))
+    # colorOptions = leafem:::colorOptions(
+    #   palette  = pal, #viridisLite::cividis
+    #   # breaks   = brks,
+    #   na.color = "transparent"),
+    # pixelValuesToColorFn = myCustomJSFunc)
+
+```
+
+```{r}
+librarian::shelf(offhabr)
+
+base_opacity   = 0.5
+
+cog_range      = c(1, 5349)
+cog_method     = "average"
+cog_palette    = "spectral_r"
+cog_opacity    = 0.9
+# lgnd_palette   = "Spectral"
+# lgnd_palette_r = TRUE
+
+cog_url   <- "https://storage.googleapis.com/offhab_lyrs/cube_1970-01-01.tif"
+tile_opts <- glue(
+  "resampling_method={cog_method}&rescale={paste(cog_range, collapse=',')}&return_mask=true&colormap_name={cog_palette}")
+tile_url  <- glue(
+  "https://api.cogeo.xyz/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@2x?url={cog_url}&{tile_opts}")
+
+# oh_map_cog_lyr("cube_1970-01-01")
+
+oh_map() |>
+  addTiles(
+    urlTemplate=tile_url,
+    options = tileOptions(
+      opacity = cog_opacity))
+```
+
+
+* [How do I set up CORS for my Google Cloud Storage Bucket?](https://developer.bitmovin.com/encoding/docs/how-do-i-set-up-cors-for-my-google-cloud-storage-bucket)
+
+```bash
+echo '[{"origin": ["*"],"responseHeader": ["*"],"method": ["GET", "HEAD"],"maxAgeSeconds": 3600}]' > cors-config.json
+
+echo '[{"origin": ["*"],"method": ["*"]}]' > cors-config.json
+
+gsutil cors set cors-config.json gs://offhab_lyrs
+
+gsutil cors get gs://offhab_lyrs
+```
+
 ## Next Steps
 
 Goal: Downscale global AquaMaps with all env preferences
@@ -402,8 +859,11 @@ vars_yn <- sp_env |>
   str_replace("YN", "")
 # vars_yn <- c("Depth", "Temp", "Salinity")
 
-vars_done <- list(
-  Depth = "[GEBCO](https://www.gebco.net)")
+vars_done <- c(
+  list(
+    Depth = "[GEBCO](https://gee-community-catalog.org/projects/gebco/)"),
+  lyrs)
+
 vars_todo <- list()
 
 txt_cks  <- ifelse(vars_yn %in% names(vars_done), 'x', ' ')
@@ -416,11 +876,12 @@ txt_info <- ifelse(
     ""))
 glue("    - [{txt_cks}] {vars_yn}: {txt_info}", .trim = F)
 ```
+        - Note: "BO22_" refers to Bio-Oracle version 2.2 from `sdmpredictors`
 - [ ] Work out rest of individual species workflow
     - [ ] Apply `ramp_env()` to each environmental parameter applicable to the species (ie `{var}YN ==1`)
     - [ ] Average all environmental parameter grids for the species
     - [ ] Clip to `NMostLat`, `SMostLat`, `WMostLong`, `EMostLong`
-    - [ ] Mask to `FAOAreas`
+    - [x] Mask to `FAOAreas`
     - [ ] Figure out unknown fields: `ExtnRuleYN`, `MapOpt`, ...
 - [ ] Repeat for workflow for ALL species
 - [ ] Render maps from anywhere
@@ -444,5 +905,75 @@ glue("    - [{txt_cks}] {vars_yn}: {txt_info}", .trim = F)
     - [ ] Endemism
     - [ ] Foundation Species
     - [ ] ...
+
+## Links from GEE
+
+TODO: 
+
+- convert Bio-Oracle SDM predictors to same resolution
+- experiment with mosaic from for simple export
+    * [google earth engine - How to split the world in four quadrants as ee.Image - Geographic Information Systems Stack Exchange](https://gis.stackexchange.com/questions/445938/how-to-split-the-world-in-four-quadrants-as-ee-image)
+    * [Google Earth Engine Tutorial: Split Image By Grid and Export to Google Drive - YouTube](https://www.youtube.com/watch?v=3yqv5fZSdH4)
+    * [ee.ImageCollection.mosaic | Google Earth Engine | Google for Developers](https://developers.google.com/earth-engine/apidocs/ee-imagecollection-mosaic)
+    * [ee.ImageCollection.fromImages | Google Earth Engine | Google for Developers](https://developers.google.com/earth-engine/apidocs/ee-imagecollection-fromimages)
+    * [Image mosaic/composite creation for Landsat and Sentinel-2 in Google Earth Engine - openMRV](https://openmrv.org/web/guest/w/modules/mrv/modules_1/image-mosaic-composite-creation-for-landsat-and-sentinel-2-in-google-earth-engine)
+
+Try:
+
+* `/Users/bbest/Github/offshorewindhabitat/scripts/offhab_gee1.ipynb`
+* geemap: see below
+* [zarr | IOOS](https://ioos.github.io/ioos_code_lab/content/code_gallery/data_management_notebooks/2023-03-20-Reading_and_writing_zarr.html)
+* [stars](https://r-spatial.github.io/stars/index.html)
+    - [stars proxy objects](https://r-spatial.github.io/stars/articles/stars2.html#stars-proxy-objects)
+    - [IPBES raster gdalcubes](https://ict.ipbes.net/ipbes-ict-guide/data-management/technical-guidelines/file-formats#b.-raster-data)
+    - [Large data and cloud native | Ch. 9 Spatial Data Science](https://r-spatial.org/book/09-Large.html#very-large-data-cubes)
+    - [Accessing data from large online rasters with Cloud-Optimized-Geotiff, GDAL, and terra R package | Francisco Rodríguez-Sánchez](https://frodriguezsanchez.net/post/accessing-data-from-large-online-rasters-with-cloud-optimized-geotiff-gdal-and-terra-r-package/)
+    - [Cloud-based processing of satellite image collections in R using STAC, COGs, and on-demand data cubes](https://r-spatial.org/r/2021/04/23/cloud-based-cubes.html)
+* viz with leafem: seemed slow
+    - [new addGeoRaster method · Issue #25 · r-spatial/leafem](https://github.com/r-spatial/leafem/issues/25)
+    - [Add Cloud Optimised Geotiff (COG) to a leaflet map. — addCOG • leafem](https://r-spatial.github.io/leafem/reference/addCOG.html)
+* [gdalcubes](https://gdalcubes.github.io) again
+    - [w/ rstac](https://gdalcubes.github.io/source/tutorials/vignettes/gc02_AWS_Sentinel2.html#finding-images-with-rstac)
+    - break up into smaller tiles
+* [2.2. Generate a Regional Composite Through Spatial Tiling](https://google-earth-engine.com/Advanced-Topics/Scaling-up-in-Earth-Engine/)
+* [Compositing, Masking, and Mosaicking | GEE](https://developers.google.com/earth-engine/tutorials/tutorial_api_05)\
+  By combining the concepts of image collections, logical operators, masking and compositing, you can achieve interesting cartographic results. For example, suppose you want an image in which land pixels are displayed in true-color and all the other pixels are displayed in blue
+- other env predictors
+    * distance from shore
+        - [30-m global shorelin on GEE](https://gee-community-catalog.org/projects/shoreline/)
+        -  [ee.Image.distance | Google Earth Engine | Google for Developers](https://developers.google.com/earth-engine/apidocs/ee-image-distance)
+        -  [ee.Image.fastDistanceTransform | Google Earth Engine | Google for Developers](https://developers.google.com/earth-engine/apidocs/ee-image-fastdistancetransform)
+    * SST by month
+        - [GEE: GSST 2002-2019](https://gee-community-catalog.org/projects/sstg/)
+- model data products
+  * [ECCO](https://www.ecco-group.org)
+    - https://podaac.jpl.nasa.gov/dataset/ECCO_L4_TEMP_SALINITY_05DEG_MONTHLY_V4R4#
+    - https://ecco-v4-python-tutorial.readthedocs.io/intro.html
+- install titiler
+  * https://github.com/developmentseed/titiler
+- gee tricks
+  * [client vs server | GEE](https://developers.google.com/earth-engine/guides/client_server)
+  * [GFW use of GEE](https://globalfishingwatch.org/data/public-data-google-earth-engine/)
+  * [Jenks natural breaks w/ SLD](https://developers.google.com/earth-engine/guides/image_visualization#styled-layer-descriptors)
+- geemap
+  * [11 export image](https://geemap.org/notebooks/11_export_image/#download-an-eeimagecollection)
+  * [44 cog stac](https://geemap.org/notebooks/44_cog_stac/?h=cog#working-with-spatiotemporal-asset-catalog-stac)
+  * [92 plotly - geemap](https://geemap.org/notebooks/92_plotly/?h=titiler)
+  * [95 create cog](https://geemap.org/notebooks/95_create_cog/?query=cog)
+  * [100 numpy to cog](https://geemap.org/notebooks/100_numpy_to_cog/?h=cog)
+  * [103 split control](https://geemap.org/notebooks/103_split_control/?h=cog)
+  * [plotlymap module add_cog_layer()](https://geemap.org/plotlymap/?h=cog#geemap.plotlymap.Map.add_cog_layer)
+  * [plotlymap module add_stac_layer(](https://geemap.org/plotlymap/?h=cog#geemap.plotlymap.Map.add_stac_layer)
+  * [foliumap module add_cog_layer()](https://geemap.org/foliumap/?h=#geemap.foliumap.Map.add_cog_layer)
+  * [foliumap add_stac_layer()](https://geemap.org/foliumap/?h=#geemap.foliumap.Map.add_stac_layer)
+- indicator portal
+  * [Data Management Tutorials - IPBES ICT guide](https://ict.ipbes.net/ipbes-ict-guide/data-management/data-management-tutorials)
+    - [Part 2 - Preparing and Mapping Data to IPBES Regions and Sub-regions - IPBES ICT guide](https://ict.ipbes.net/ipbes-ict-guide/data-management/technical-guidelines/preparing-and-mapping-data-to-ipbes-regions-and-sub-regions)
+    - [Part 11 - How to Document an Indicator - IPBES ICT guide](https://ict.ipbes.net/ipbes-ict-guide/data-management/technical-guidelines/how-to-document-an-indicator)
+- Map of Life: indicators, portal setup
+  * [Map of Life | Map of Life](https://mol.org/)
+  * [Map of Life - Indicators](https://mol.org/indicators/)
+  * [Map of Life - Patterns](https://mol.org/patterns/)
+  * [Discovery Potential](https://vertlife.org/data/discoverypotential/)
 
 ## References
