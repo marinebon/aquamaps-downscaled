@@ -219,8 +219,7 @@ get_am_spp <- function(){
   am_spp <- tbl(am_db, "speciesoccursum_r") |> 
     select(
       SpeciesID, SpecCode, Genus, Species) |> 
-
-  distinct() |> 
+    distinct() |> 
     collect() |> 
     mutate(
       sp_sci = glue("{Genus} {Species}")) |> 
@@ -232,16 +231,33 @@ get_am_spp <- function(){
   # am_spp$Order   |> unique() |> length()   #    298
 }
 
-get_sp_info <- function(sp_code){
+get_sp_info <- function(sp_key){
+  # sp_key matches hspen_r.Speccode if numeric, otherwise
+  #                hspen_r.SpeciesID
   
-  d_hspen <- tbl(am_db, "hspen_r") |> 
-    filter(Speccode == !!sp_code) |>
-    collect() |> 
-    # TODO: filter by sp_id vs sp_code
-    #   eg sp_code == 46802: 
-    #     "sp_scientific": ["Ammodytoides gilli", "Isopora palifera"]
-    #     "sp_id"        : ["Fis-138579"        , "W-Scl-730686"]
-    slice(1)
+  # TODO:
+  # - look at speciesoccursum_r.StockDefs multiple stock definitions / lifestage per sp?
+  #   tbl(am_db, "speciesoccursum_r")
+  
+  if (is.numeric(sp_key)){
+    d_hspen <- tbl(am_db, "hspen_r") |> 
+      filter(Speccode == !!sp_key) |>
+      collect() |> 
+      # TODO: filter by sp_id vs sp_code
+      #   eg sp_code == 46802: 
+      #     "sp_scientific": ["Ammodytoides gilli", "Isopora palifera"]
+      #     "sp_id"        : ["Fis-138579"        , "W-Scl-730686"]
+      slice(1)
+  } else {
+    d_hspen <- tbl(am_db, "hspen_r") |> 
+      filter(SpeciesID == !!sp_key) |>
+      collect() |> 
+      slice(1)
+  }
+  
+  # browser()
+  
+  message(glue("sp_key: {sp_key}"))
   
   vars_yes <- d_hspen |> 
     select(ends_with("YN")) |> 
@@ -280,8 +296,8 @@ get_sp_info <- function(sp_code){
   
   sp_info <- list()
   
-  d_sp <- am_spp |> 
-    filter(SpecCode == sp_code)
+  d_sp <- tbl(am_db, "speciesoccursum_r") |> 
+    filter(SpeciesID == d_hspen$SpeciesID)
   sp_info["sp_scientific"] <- list(d_sp$sp_sci)
   sp_info["sp_code"]       <- list(d_sp$SpecCode)
   sp_info["sp_id"]         <- list(d_sp$SpeciesID)
