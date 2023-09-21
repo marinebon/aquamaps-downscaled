@@ -59,3 +59,50 @@ am_db <- default_db("sqlite")  # ~/.config/aquamaps/am.db
 # list of species
 am_spp <- get_am_spp()
 
+
+# test gcs tifs locally -----
+
+
+# gsutil -m cp \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000020736-0000062208.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000000000-0000020736.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000020736-0000020736.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000020736-0000041472.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000020736-0000000000.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000000000-0000041472.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000000000-0000062208.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000000000-0000000000.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000041472-0000041472.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000020736-0000082944.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000000000-0000082944.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000041472-0000000000.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000041472-0000020736.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000041472-0000062208.tif" \
+# "gs://sdm-env_gebco-global/im-spp10-fine-not-cog_v07_2023_09_21_20_52_260000041472-0000082944.tif" \
+# .
+
+librarian::shelf(
+  # gdalcubes,
+  mapview, stars, terra)
+
+dir_tif <- "/Users/bbest/Desktop/am-fine_im-dl"
+tifs <- list.files(dir_tif, pattern=".tif$", full.names = TRUE)
+mos <- st_mosaic(
+  tifs,
+  options = c("-vrtnodata", "0"))
+mos
+str <- read_stars(
+  mos)
+  # proxy = T,
+  # RasterIO = list(
+  #   # nXSize = 240, nYSize = 240,
+  #   bands = c(1)))
+d <- str[,,,1] |> # select bands
+  st_downsample(200)
+d_t <- rast(d) |> 
+  terra::trim()
+plot(d)
+plet(d_t, tile='Streets')
+mapView(stars::st_as_stars(d_t))
+
+
