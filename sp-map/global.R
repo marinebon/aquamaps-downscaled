@@ -1,3 +1,9 @@
+# RESOLUTION ----
+# 1 decimal degree = 111 km (or 60 nautical miles) at equator
+# AquaMaps at 0.5 °                          :1/2   ° =  55.5    km
+# GEBCO at 15 arc-second                     :1/240 ° =   0.4625 km
+# sdmpredictors: Bio-ORACLE at 5 arc-minute  :1/12  ° =   9.25   km
+
 Sys.setenv(
   EARTHENGINE_GCLOUD = "/usr/bin/gcloud",
   EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",

@@ -239,6 +239,10 @@ get_sp_info <- function(sp_key){
   # - look at speciesoccursum_r.StockDefs multiple stock definitions / lifestage per sp?
   #   tbl(am_db, "speciesoccursum_r")
   
+  sp_key_is_numeric <- !grepl("\\D", sp_key)
+  if (sp_key_is_numeric)
+    sp_key <- as.numeric(sp_key)
+  
   if (is.numeric(sp_key)){
     d_hspen <- tbl(am_db, "hspen_r") |> 
       filter(Speccode == !!sp_key) |>
@@ -274,6 +278,7 @@ get_sp_info <- function(sp_key){
     "PrefMax"  , 1,
     "Max"      , 0)
   
+  # browser()
   d_env <- d_hspen |> 
     select(starts_with(vars_yes)) |>
     select(!ends_with("YN")) |> 
@@ -297,7 +302,10 @@ get_sp_info <- function(sp_key){
   sp_info <- list()
   
   d_sp <- tbl(am_db, "speciesoccursum_r") |> 
-    filter(SpeciesID == d_hspen$SpeciesID)
+    filter(SpeciesID == !!d_hspen$SpeciesID) |> 
+    collect() |> 
+    mutate(
+      sp_sci = glue("{Genus} {Species}"))
   sp_info["sp_scientific"] <- list(d_sp$sp_sci)
   sp_info["sp_code"]       <- list(d_sp$SpecCode)
   sp_info["sp_id"]         <- list(d_sp$SpeciesID)
@@ -310,8 +318,10 @@ get_sp_info <- function(sp_key){
   
   sp_info["env"] <- list(l_env)
   
+  # browser()
   d_sp <- tbl(am_db, "speciesoccursum_r") |> 
-    filter(SpecCode == !!sp_code) |> 
+    filter(SpecCode == !!sp_info[["sp_code"]]) |>
+    # filter(SpecCode == 69007) |> 
     collect()
   
   sp_info$taxa <- d_sp |> 
