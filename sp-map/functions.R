@@ -231,7 +231,7 @@ get_am_spp <- function(){
   # am_spp$Order   |> unique() |> length()   #    298
 }
 
-get_sp_info <- function(sp_key){
+get_sp_info <- function(sp_key, verbose = F){
   # sp_key matches hspen_r.Speccode if numeric, otherwise
   #                hspen_r.SpeciesID
   
@@ -257,7 +257,8 @@ get_sp_info <- function(sp_key){
   
   # browser()
   
-  message(glue("sp_key: {sp_key}"))
+  if (verbose)
+    message(glue("sp_key: {sp_key}"))
   
   vars_yes <- d_hspen |> 
     select(ends_with("YN")) |> 
@@ -297,7 +298,10 @@ get_sp_info <- function(sp_key){
   sp_info <- list()
   
   d_sp <- tbl(am_db, "speciesoccursum_r") |> 
-    filter(SpeciesID == d_hspen$SpeciesID)
+    filter(SpeciesID == !!d_hspen$SpeciesID) |> 
+    collect() |> 
+    mutate(
+      sp_sci = glue("{Genus} {Species}"))
   sp_info["sp_scientific"] <- list(d_sp$sp_sci)
   sp_info["sp_code"]       <- list(d_sp$SpecCode)
   sp_info["sp_id"]         <- list(d_sp$SpeciesID)
@@ -309,10 +313,6 @@ get_sp_info <- function(sp_key){
     list()
   
   sp_info["env"] <- list(l_env)
-  
-  d_sp <- tbl(am_db, "speciesoccursum_r") |> 
-    filter(SpecCode == !!sp_code) |> 
-    collect()
   
   sp_info$taxa <- d_sp |> 
       select(Kingdom, Phylum, Class, Order, Family) |> 

@@ -24,7 +24,7 @@ librarian::shelf(
   #shiny, 
   stringr, terra, tibble, tidyr)
 select = dplyr::select
-source(here("sp-map/functions.R"))
+source(here("sp-map/global.R"))
 
 ## On MacBook initial ----
 # python:         /opt/homebrew/bin/python3
@@ -62,11 +62,13 @@ am_spp <- get_am_spp() |>
 
 # sample for export
 spp_ids <- am_spp$SpeciesID[1:10]
+# sp_key = spp_ids[1]
 
 # source(here("sp-map/functions.R"))
 lst_spp_info <- lapply(spp_ids, get_sp_info)
 
 lst_spp_coarse <- map(lst_spp_info, calc_im_sp_coarse)
+lst_spp_fine   <- map(lst_spp_info, calc_im_sp_fine)
 
 im_spp <- ee$ImageCollection(lst_spp_coarse)$toBands()$rename(spp_ids)
 # im_spp$bandNames()$getInfo()
@@ -170,26 +172,23 @@ ee_monitoring(task_im_spp)
 
 librarian::shelf(
   # gdalcubes,
-  mapview, stars, terra)
+  leaflet, mapview, stars, terra)
 
 dir_tif <- "/Users/bbest/Desktop/am-fine_im-dl"
 tifs <- list.files(dir_tif, pattern=".tif$", full.names = TRUE)
-mos <- st_mosaic(
-  tifs,
-  options = c("-vrtnodata", "0"))
-mos
-str <- read_stars(
-  mos)
+m <- st_mosaic(tifs, options = c("-vrtnodata", "0"))
+m
+s <- read_stars(m)
   # proxy = T,
   # RasterIO = list(
   #   # nXSize = 240, nYSize = 240,
   #   bands = c(1)))
-d <- str[,,,1] |> # select bands
+d <- s[,,,2] |> # select bands # 1: NZ funk
   st_downsample(200)
 d_t <- rast(d) |> 
   terra::trim()
-plot(d)
-plet(d_t, tile='Streets')
+plot(d_t)
+plet(d_t, tile=providers$CartoDB.DarkMatter)
 mapView(stars::st_as_stars(d_t))
 
 
