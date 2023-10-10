@@ -239,6 +239,10 @@ get_sp_info <- function(sp_key, verbose = F){
   # - look at speciesoccursum_r.StockDefs multiple stock definitions / lifestage per sp?
   #   tbl(am_db, "speciesoccursum_r")
   
+  sp_key_is_numeric <- !grepl("\\D", sp_key)
+  if (sp_key_is_numeric)
+    sp_key <- as.numeric(sp_key)
+  
   if (is.numeric(sp_key)){
     d_hspen <- tbl(am_db, "hspen_r") |> 
       filter(Speccode == !!sp_key) |>
@@ -275,6 +279,7 @@ get_sp_info <- function(sp_key, verbose = F){
     "PrefMax"  , 1,
     "Max"      , 0)
   
+  # browser()
   d_env <- d_hspen |> 
     select(starts_with(vars_yes)) |>
     select(!ends_with("YN")) |> 
