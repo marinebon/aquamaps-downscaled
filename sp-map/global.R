@@ -4,10 +4,20 @@
 # GEBCO at 15 arc-second                     :1/240 ° =   0.4625 km
 # sdmpredictors: Bio-ORACLE at 5 arc-minute  :1/12  ° =   9.25   km
 
-Sys.setenv(
-  EARTHENGINE_GCLOUD = "/usr/bin/gcloud",
-  EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",
-  EARTHENGINE_ENV    = "rgee")
+os <- Sys.info()[['sysname']]
+if (os == "Darwin"){
+  # Ben's MacBook
+  Sys.setenv(
+    EARTHENGINE_GCLOUD = "/Users/bbest/google-cloud-sdk/bin/gcloud",
+    # EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",
+    EARTHENGINE_ENV    = "rgee")  
+} else {
+  # otherwise presume on server rstudio.marinebon.app (os = "Linux")
+  Sys.setenv(
+    EARTHENGINE_GCLOUD = "/usr/bin/gcloud",
+    EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",
+    EARTHENGINE_ENV    = "rgee")
+}
 
 if (!"librarian" %in% installed.packages())
   install.packages("librarian")
@@ -15,8 +25,9 @@ if (!"librarian" %in% installed.packages())
 # devtools::install_bitbucket("bklamer/rcrypt")  # aquamapsdata dependency
 librarian::shelf(
   raquamaps/aquamapsdata, dplyr, ggplot2, glue, here, jsonlite,
-  leaflet, leaflet.extras2, listviewer,
-  purrr, raster, rgee, reticulate, scales, sf, shiny, stringr, tibble, tidyr)
+  leaflet, leaflet.extras2, listviewer, purrr, 
+  raster, # TODO: swap raster with terra
+  rgee, reticulate, scales, sf, shiny, stringr, tibble, tidyr)
 select = dplyr::select
 source(here("sp-map/functions.R"))
 

@@ -1,30 +1,6 @@
-os <- Sys.info()[['sysname']]
-if (os == "Darwin"){
-  # Ben's MacBook
-  Sys.setenv(
-    EARTHENGINE_GCLOUD = "/Users/bbest/google-cloud-sdk/bin/gcloud",
-    # EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",
-    EARTHENGINE_ENV    = "rgee")  
-} else {
-  # otherwise presume on server rstudio.marinebon.app
-  Sys.setenv(
-    EARTHENGINE_GCLOUD = "/usr/bin/gcloud",
-    EARTHENGINE_PYTHON = "/opt/venv/rgee/bin/python",
-    EARTHENGINE_ENV    = "rgee")
-}
-
-if (!"librarian" %in% installed.packages())
-  install.packages("librarian")
-
-# devtools::install_bitbucket("bklamer/rcrypt")  # aquamapsdata dependency
+source(here::here("sp-map/global.R"))
 librarian::shelf(
-  raquamaps/aquamapsdata, dplyr, ggplot2, fs, glue, here, jsonlite,
-  leaflet, leaflet.extras2, listviewer,
-  purrr, raster, rgee, reticulate, scales, sf, 
-  #shiny, 
-  stringr, terra, tibble, tidyr)
-select = dplyr::select
-source(here("sp-map/global.R"))
+  fs, terra)
 
 ## On MacBook initial ----
 # python:         /opt/homebrew/bin/python3
@@ -44,7 +20,6 @@ source(here("sp-map/global.R"))
 #   earthengine_version = ee_version(),
 #   python_version = "3.8.6",
 #   confirm = interactive())
-
 
 # rgee::ee_check()
 # ◉  Python version
@@ -67,10 +42,11 @@ spp_ids <- am_spp$SpeciesID[1:10]
 # source(here("sp-map/functions.R"))
 lst_spp_info <- lapply(spp_ids, get_sp_info)
 
-lst_spp_coarse <- map(lst_spp_info, calc_im_sp_coarse)
-lst_spp_fine   <- map(lst_spp_info, calc_im_sp_fine)
+# lst_spp_coarse <- map(lst_spp_info, calc_im_sp_coarse)
+lst_spp <- map(lst_spp_info, calc_im_sp_fine)
 
-im_spp <- ee$ImageCollection(lst_spp_coarse)$toBands()$rename(spp_ids)
+# im_spp <- ee$ImageCollection(lst_spp_coarse)$toBands()$rename(spp_ids)
+im_spp  <- ee$ImageCollection(lst_spp)$toBands()$rename(spp_ids)
 # im_spp$bandNames()$getInfo()
 
 prj_im       <- im_spp$projection()
