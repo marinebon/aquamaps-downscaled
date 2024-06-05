@@ -123,7 +123,12 @@ calc_im_sp_fine <- function(sp_info){
   # qmap(im_sp)
   
   # fao mask
-  fc_fao_sp = fc_fao$filter(ee$Filter$inList('zone', sp_info[['FAOAreas']]))
+  fao_areas <- sp_info[['FAOAreas']]
+  if (length(fao_areas) > 1){
+    fc_fao_sp = fc_fao$filter(ee$Filter$inList('zone', fao_areas))
+  } else {
+    fc_fao_sp = fc_fao$filter(ee$Filter$equals('zone', fao_areas))
+  }
   im_fao_mask = ee$ImageCollection(c(
     ee$Image$constant(0)$toInt(),
     ee$Image$constant(1)$toInt()$clipToCollection(fc_fao_sp) ))$mosaic()

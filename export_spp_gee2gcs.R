@@ -41,9 +41,10 @@ spp_ids <- am_spp$SpeciesID[1:10]
 
 # source(here("sp-map/functions.R"))
 lst_spp_info <- lapply(spp_ids, get_sp_info)
+# listviewer::jsonedit(lst_spp_info[1:3])
 
 # lst_spp_coarse <- map(lst_spp_info, calc_im_sp_coarse)
-lst_spp <- map(lst_spp_info, calc_im_sp_fine)
+lst_spp <- map(lst_spp_info, calc_im_sp_fine) # Possible error: "reached elapsed time limit"
 
 # im_spp <- ee$ImageCollection(lst_spp_coarse)$toBands()$rename(spp_ids)
 im_spp  <- ee$ImageCollection(lst_spp)$toBands()$rename(spp_ids)
@@ -52,22 +53,26 @@ im_spp  <- ee$ImageCollection(lst_spp)$toBands()$rename(spp_ids)
 prj_im       <- im_spp$projection()
 # crs_im       <- im_spp$projection()$crs()$getInfo()           # "EPSG:4326"
 # transform_im <- im_spp$projection()$transform()       # "PARAM_MT[\"Affine\", \n  PARAMETER[\"num_row\", 3], \n  PARAMETER[\"num_col\", 3]]"
-ply_globe    <- ee$Geometry$BBox(-180,-89.9999,180,89.9999)$transform("EPSG:4326", 0.001)
+# ply_globe    <- ee$Geometry$BBox(-180,-89.9999,180,89.9999)$transform("EPSG:4326", 0.001)
+#   ERROR in Earth Engine servers: Unable to transform edge (5440.000977, 21408.000000 to 5440.001099, 21408.000000) from EPSG:4326 PLANAR [0.004166666666666667, 0.0, 0.0, 0.0, -0.004166666666666667, 0.0] to EPSG:4326.
+ply_globe    <- ee$Geometry$BBox(-180,-89.99,180,89.99)$transform("EPSG:4326", 0.001)
 
 ic_gebco <- ee$ImageCollection("projects/sat-io/open-datasets/gebco/gebco_sub-ice-topo")
 im_am    <- ee$Image("projects/eq-am-fine/assets/sdmpredictors/am-hcaf_v1-simple")
 
-prj_fine   <- ic_gebco$first()$projection()$getInfo()
-prj_coarse <- im_am$projection()$getInfo()
+prj_fine   <- ic_gebco$first()$projection() # $getInfo()
+prj_coarse <- im_am$projection()            # $getInfo()
 
 # export as GeoTIFF (not cloud-optimized)
 task_im_spp <- ee_image_to_gcs(
   image          = im_spp,
-  description    = "im-spp10-coarse-not-cog-v03_to_gcs",
+  description    = "im_10spp_v4-fine-not-cog_to_gcs",
   bucket         = "sdm-env_gebco-global",
-  fileNamePrefix = "im-spp10-coarse_v03",
-  crs            = prj_coarse$crs(),
-  scale          = prj_coarse$nominalScale()$getInfo(), # v3: with scale
+  fileNamePrefix = "im_10spp_v4-fine",
+  # crs            = prj_coarse$crs(),
+  # scale          = prj_coarse$nominalScale()$getInfo(), # v3: with scale
+  crs            = prj_fine$crs()$getInfo(),
+  scale          = prj_fine$nominalScale()$getInfo(), # v3: with scale
   # crsTransform   = cat(prj_coarse$transform()$getInfo()),
   # https://github.com/r-spatial/rgee/blob/219d84917300ca378f395d75a4372fbbeefba73b/R/ee_download.R#L335C4-L336
   #  @param crsTransform A comma-separated string of 6 numbers describing
@@ -89,6 +94,9 @@ task_im_spp <- ee_image_to_gcs(
   fileFormat     = 'GeoTIFF')  # 25 min for single on EE
 task_im_spp$start()
 ee_monitoring(task_im_spp)
+# State: FAILED
+# ERROR in Earth Engine servers: Unable to transform edge (5440.000977, 21408.000000 to 5440.001099, 21408.000000) from EPSG:4326 PLANAR [0.004166666666666667, 0.0, 0.0, 0.0, -0.004166666666666667, 0.0] to EPSG:4326.
+
 # ID: TLMWVPWDQAS5N22KXDSSWX7I
 # Phase: Completed
 # Runtime: 7s (started 2023-09-21 11:16:21 -0700)
