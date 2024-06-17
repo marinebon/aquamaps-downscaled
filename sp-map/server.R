@@ -87,6 +87,10 @@ shinyServer(function(input, output, session) {
   output$plot_sp_env <- renderPlot({
 
     sp_info <- rx_sp_info()
+    # sp_id <- am_spp |> 
+    #   filter(sp_sci == "Epinephelus striatus") |> 
+    #   pull(SpeciesID)
+    # sp_info <- get_sp_info(sp_id)
     
     d <- sp_info$env |> 
       enframe(name = "variable") |> 
@@ -97,7 +101,6 @@ shinyServer(function(input, output, session) {
     g <- ggplot(d, aes(value, suitability)) +
       geom_area() +
       scale_y_continuous(labels = percent) +
-      theme_light() +
       facet_wrap(
         vars(variable), 
         scales = "free") +
@@ -105,7 +108,9 @@ shinyServer(function(input, output, session) {
         title    = sp_info$sp_scientific,
         subtitle = "environmental envelope",
         x        = NULL,
-        y        = "Suitability")
+        y        = "Suitability") +
+      theme_gray()
+    
     g
   })
   
